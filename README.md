@@ -1,39 +1,29 @@
 <div align="center">
-  <img
-    src="sunshine.svg"
-    alt="Sunshine icon"
-    width="256"
-/>
-  <h1 align="center">Sunshine</h1>
-  <h4 align="center">Self-hosted game stream host for Moonlight.</h4>
+  <img src="sunshine.svg" alt="Sunshine icon" width="256" />
+  <h1>Sunshine Auto VDD</h1>
+  <p>On-demand virtual displays for Moonlight on Windows</p>
 </div>
 
-<div align="center">
-  <a href="https://github.com/LizardByte/Sunshine"><img src="https://img.shields.io/github/stars/lizardbyte/sunshine.svg?logo=github&style=for-the-badge" alt="GitHub stars"></a>
-  <a href="https://github.com/LizardByte/Sunshine/releases/latest"><img src="https://img.shields.io/github/downloads/lizardbyte/sunshine/total.svg?style=for-the-badge&logo=github" alt="GitHub Releases"></a>
-  <a href="https://hub.docker.com/r/lizardbyte/sunshine"><img src="https://img.shields.io/docker/pulls/lizardbyte/sunshine.svg?style=for-the-badge&logo=docker" alt="Docker"></a>
-  <a href="https://github.com/LizardByte/Sunshine/pkgs/container/sunshine"><img src="https://img.shields.io/badge/dynamic/json.svg?url=https%3A%2F%2Fipitio.github.io%2Fbackage%2FLizardByte%2FSunshine%2Fsunshine.json&query=%24.downloads&label=ghcr%20pulls&style=for-the-badge&logo=github" alt="GHCR"></a>
-  <a href="https://flathub.org/apps/dev.lizardbyte.app.Sunshine"><img src="https://img.shields.io/flathub/downloads/dev.lizardbyte.app.Sunshine.svg?style=for-the-badge&logo=flathub" alt="Flathub installs"></a>
-  <a href="https://flathub.org/apps/dev.lizardbyte.app.Sunshine"><img src="https://img.shields.io/flathub/v/dev.lizardbyte.app.Sunshine.svg?style=for-the-badge&logo=flathub" alt="Flathub Version"></a>
-  <a href="https://github.com/microsoft/winget-pkgs/tree/master/manifests/l/LizardByte/Sunshine"><img src="https://img.shields.io/winget/v/LizardByte.Sunshine.svg?style=for-the-badge&logo=data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAHuSURBVFhH7ZfNTtRQGIYZiMDwN/IrCAqIhMSNKxcmymVwG+5dcDVsWHgDrtxwCYQVl+BChzDEwSnPY+eQ0sxoOz1mQuBNnpyvTdvz9jun5/SrjfxnJUkyQbMEz2ELduF1l0YUA3QyTrMAa2AnPtyOXsELeAYNyKtV2EC3k3lYgTOwg09ghy/BTp7CKBRV844BOpmmMV2+ySb4BmInG7AKY7AHH+EYqqhZo9PPBG/BVDlOizAD/XQFmnoPXzxRQX8M/CCYS48L6RIc4ygGHK9WGg9HZSZMUNRPVwNJGg5Hg2Qgqh4N3FsDsb6EmgYm07iwwvUxstdxJTwgmILf4CfZ6bb5OHANX8GN5x20IVxnG8ge94pt2xpwU3GnCwayF4Q2G2vgFLzHndFzQdk4q77nNfCdwL28qNyMtmEf3A1/QV5FjDiPWo5jrwf8TWZChTlgJvL4F9QL50/A43qVidTvLcuoM2wDQ1+IkgefgUpLcYwMVBqCKNJA2b0gKNocOIITOIef8C/F/CdMbh/GklynsSawKLHS8d9/B1x2LUqsfFyy3TMsWj5A1cLkotDbYO4JjWWZlZEGv8EbOIR1CAVN2eG8W5oNKgxaeC6DmTJjZs7ixUxpznLPLT+v4sXpoMLcLI3mzFSonDXIEI/M3QCIO4YuimBJ/gAAAABJRU5ErkJggg==" alt="Winget Version"></a>
-  <a href="https://github.com/LizardByte/Sunshine/actions/workflows/ci.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/lizardbyte/sunshine/ci.yml.svg?branch=master&label=CI%20build&logo=github&style=for-the-badge" alt="GitHub Workflow Status (CI)"></a>
-  <a href="https://github.com/LizardByte/Sunshine/actions/workflows/localize.yml?query=branch%3Amaster"><img src="https://img.shields.io/github/actions/workflow/status/lizardbyte/sunshine/localize.yml.svg?branch=master&label=localize%20build&logo=github&style=for-the-badge" alt="GitHub Workflow Status (localize)"></a>
-  <a href="https://codecov.io/gh/LizardByte/Sunshine"><img src="https://img.shields.io/endpoint.svg?url=https%3A%2F%2Fapp.lizardbyte.dev%2Fdashboard%2Fshields%2Fcodecov%2FSunshine.json&style=for-the-badge&logo=codecov" alt="Codecov"></a>
-  <a href="https://sonarcloud.io/project/overview?id=LizardByte_Sunshine"><img src="https://img.shields.io/sonar/quality_gate/LizardByte_Sunshine.svg?server=https%3A%2F%2Fsonarcloud.io&style=for-the-badge&logo=sonarqubecloud&label=sonarcloud" alt="SonarCloud"></a>
-</div>
+This is an experimental community fork of [LizardByte Sunshine](https://github.com/LizardByte/Sunshine). It adds automatic management of a separately installed, signed [Virtual Display Driver (VDD)](https://github.com/VirtualDrivers/Virtual-Display-Driver). The general Sunshine streaming features and platforms below come from the upstream project; this fork's VDD integration is for Windows hosts.
 
-## ℹ️ About
+## What this fork adds
 
-Sunshine is a self-hosted game stream host for Moonlight.
-Offering low-latency, cloud gaming server capabilities with support for AMD, Intel, and Nvidia GPUs for hardware
-encoding. Software encoding is also available. You can connect to Sunshine from any Moonlight client on a variety of
-devices. A web UI is provided to allow configuration, and client pairing, from your favorite web browser. Pair from
-the local server or any mobile device.
+When the first Moonlight client requests a stream, Sunshine saves the current display layout, adds the client's resolution and integer refresh rate to the VDD settings if needed, enables its own VDD device, waits for Windows to enumerate the mode, and makes that virtual display primary. Additional clients share it. After the last stream ends, Sunshine restores the original layout, disables the VDD device, and restores the VDD settings file if no other program changed it.
 
-LizardByte has the full documentation hosted on [Read the Docs](https://docs.lizardbyte.dev/projects/sunshine)
+The first client's request can use a custom size or refresh rate. The prototype accepts requests from 320×200 to 8192×4320 pixels and 24–240 Hz; Windows and the encoder may still reject a particular combination. A rejected launch restores the display state. The VDD package remains installed while idle, so follow [VDD's guidance](https://github.com/VirtualDrivers/Virtual-Display-Driver#%EF%B8%8F-important-gpuchipset-driver-updates) before major GPU or chipset driver updates.
 
-* [Stable Docs](https://docs.lizardbyte.dev/projects/sunshine/latest/)
-* [Beta Docs](https://docs.lizardbyte.dev/projects/sunshine/master/)
+## Set up on Windows
+
+1. Build and install this fork using the upstream [Sunshine build instructions](https://docs.lizardbyte.dev/projects/sunshine/latest/) and the repository's MSYS2 UCRT64 setup. Official upstream Sunshine releases do not contain these changes.
+2. Download the signed AMD64 VDD driver package from [VirtualDrivers releases](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases). Build `tools/managed-vdd-poc` and, as administrator, run `managed-vdd-poc provision <path-to-MttVDD.inf> <owner-file>`. This creates one disabled device owned by Sunshine. Keep the owner file in an administrator-controlled directory. Do not point Sunshine at an unrelated VDD device.
+3. Set `managed_vdd_owner_file = <owner-file>` in Sunshine's `sunshine.conf`, then restart its service. An empty value disables this feature. A successful startup logs `Managed VDD ready`.
+4. Choose a resolution and FPS in Moonlight. On the first stream, Sunshine requests the corresponding VDD resolution and Hz. The [managed VDD development notes](docs/managed_vdd_poc.md) cover diagnostics, recovery and current limits.
+
+This feature has been built and tested on one Windows host, including two custom VDD modes and one Moonlight stream. Resume, cancel, timeout, headless recovery and forced-crash cases still need end-to-end testing.
+
+## Upstream Sunshine features
+
+Sunshine is a self-hosted game stream host for Moonlight, with hardware encoding on supported AMD, Intel and NVIDIA GPUs, software encoding, client pairing and a web interface. Upstream documentation is available at [docs.lizardbyte.dev](https://docs.lizardbyte.dev/projects/sunshine).
 
 ## 🎮 Feature Compatibility
 

@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include "vdd_modes.h"
+
 #include <atomic>
 #include <cstdint>
 #include <map>
@@ -39,6 +41,8 @@ namespace managed_vdd {
     virtual bool has_checkpoint() = 0;
     /** @brief Persist the original topology before making any changes. */
     virtual bool checkpoint() = 0;
+    /** @brief Make the first client's mode available before loading the driver. */
+    virtual bool prepare_mode(mode_t mode) = 0;
     /** @brief Activate only the owned instance and verify PnP state. */
     virtual result_e activate() = 0;
     /** @brief Wait for the owned display target to become available. */
@@ -86,7 +90,7 @@ namespace managed_vdd {
     /** @brief Recover a stale checkpoint only when no sessions hold leases. @return Recovery succeeded. */
     bool recover();
     /** @brief Acquire a pending launch, rejecting a second concurrent pending handshake. */
-    std::shared_ptr<lease_t> acquire(std::uint32_t id);
+    std::shared_ptr<lease_t> acquire(std::uint32_t id, mode_t mode = {});
     /** @brief Return the current lifecycle state. */
     state_e state() const;
     /** @brief Return the last failure description. */

@@ -15,6 +15,7 @@ namespace {
     std::vector<std::string> calls;  ///< Completed operation trace.
     bool saved = false;  ///< Durable checkpoint exists.
     bool checkpoint_ok = true;  ///< Snapshot persistence result.
+    bool prepare_ok = true;  ///< Mode preparation result.
     bool ready = true;  ///< Display enumeration result.
     bool restore_ok = true;  ///< Original physical/headless baseline restored.
     bool inactive = true;  ///< Verified inactive state.
@@ -31,6 +32,11 @@ namespace {
       calls.push_back("checkpoint");
       saved = checkpoint_ok;
       return checkpoint_ok;
+    }
+
+    bool prepare_mode(managed_vdd::mode_t) override {
+      calls.push_back("prepare_mode");
+      return prepare_ok;
     }
 
     result_e activate() override {
@@ -101,6 +107,20 @@ namespace {
     EXPECT_FALSE(lease->start());
     EXPECT_EQ(manager->state(), state_e::idle);
     EXPECT_FALSE(backend->saved);
+  }
+
+  TEST_F(ManagedVddTest, ModePreparedBeforeDriverActivation) {
+    auto lease = manager->acquire(1, {1648, 839, 60});
+    ASSERT_TRUE(lease);
+    EXPECT_EQ(backend->calls, (std::vector<std::string> {"checkpoint", "prepare_mode", "activate", "ready"}));
+    lease->expire();
+  }
+
+  TEST_F(ManagedVddTest, UnsupportedModeRollsBackWithoutActivating) {
+    backend->prepare_ok = false;
+    EXPECT_FALSE(manager->acquire(1, {1648, 839, 60}));
+    EXPECT_EQ(backend->calls, (std::vector<std::string> {"checkpoint", "prepare_mode", "restore", "deactivate", "inactive", "clear"}));
+    EXPECT_EQ(manager->state(), state_e::idle);
   }
 
   TEST_F(ManagedVddTest, OldLeaseCannotReleaseReusedLaunchId) {

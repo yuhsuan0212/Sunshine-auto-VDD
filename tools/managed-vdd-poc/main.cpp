@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
     }
     for (int i = 0; i < count; ++i) {
       const auto begin = std::chrono::steady_clock::now();
-      auto lease = manager->acquire(i);
+      auto lease = configure_mode ? manager->acquire(i, {width, height, fps}) : manager->acquire(i);
       if (!lease || !lease->start()) {
         throw std::runtime_error("Activation failed: " + manager->error());
       }
@@ -65,7 +65,8 @@ int main(int argc, char **argv) {
           if (!observer->configure(width, height, fps, false)) {
             throw std::runtime_error("Could not configure requested VDD SDR mode");
           }
-          std::cout << "configured=" << width << 'x' << height << '@' << fps << " primary=true\n" << std::flush;
+          std::cout << "configured=" << width << 'x' << height << '@' << fps << " primary=true\n"
+                    << std::flush;
         } catch (...) {
           lease->finish();
           throw;

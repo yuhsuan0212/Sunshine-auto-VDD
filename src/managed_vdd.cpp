@@ -83,7 +83,7 @@ namespace managed_vdd {
     }
   }
 
-  std::shared_ptr<lease_t> manager_t::acquire(std::uint32_t id) {
+  std::shared_ptr<lease_t> manager_t::acquire(std::uint32_t id, mode_t mode) {
     // Allocate before taking the mutex: control-block allocation failure may destroy the lease.
     const auto generation = ++next_generation_;
     auto lease = std::shared_ptr<lease_t>(new lease_t(shared_from_this(), id, generation));
@@ -104,6 +104,12 @@ namespace managed_vdd {
         }
         if (!backend_->checkpoint()) {
           fail("Cannot save baseline; VDD was not activated");
+          return {};
+        }
+        if ((mode.width || mode.height || mode.fps) && !backend_->prepare_mode(mode)) {
+          if (cleanup()) {
+            error_ = "Cannot prepare the requested VDD display mode";
+          }
           return {};
         }
         state_ = state_e::activating;

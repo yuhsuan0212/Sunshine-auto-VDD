@@ -17,6 +17,7 @@ namespace managed_vdd {
     ~windows_backend_t() override;
     bool has_checkpoint() override;
     bool checkpoint() override;
+    bool prepare_mode(mode_t mode) override;
     result_e activate() override;
     bool wait_ready() override;
     bool restore() override;

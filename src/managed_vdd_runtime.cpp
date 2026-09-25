@@ -53,7 +53,7 @@ namespace managed_vdd::runtime {
     if (!manager) {
       throw std::runtime_error("Managed VDD is configured but initialization failed");
     }
-    auto lease = manager->acquire(session.id);
+    auto lease = manager->acquire(session.id, {session.width, session.height, session.fps});
     if (!lease) {
       throw std::runtime_error("Managed VDD busy or recovery required: " + manager->error());
     }
@@ -64,7 +64,7 @@ namespace managed_vdd::runtime {
       if (!backend->configure(session.width, session.height, session.fps, session.enable_hdr)) {
         lease->expire();
         BOOST_LOG(error) << "Managed VDD could not apply " << mode << "; recovery: " << (manager->state() == state_e::idle ? "complete" : manager->error());
-        throw std::runtime_error("Managed VDD cannot apply " + mode + ". The mode must be supported by the VDD configuration.");
+        throw std::runtime_error("Managed VDD cannot apply " + mode + ". Windows did not advertise or accept the requested mode.");
       }
     }
 #endif

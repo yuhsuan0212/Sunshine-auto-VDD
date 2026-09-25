@@ -54,10 +54,9 @@ namespace managed_vdd {
       return json::parse(input);
     }
 
-    /** @brief Atomically replace a durable local state file before changing devices. */
-    void write_json(const std::filesystem::path &path, const json &value) {
+    /** @brief Atomically replace a durable local file before changing devices. */
+    void write_bytes(const std::filesystem::path &path, const std::string &data) {
       const auto tmp = std::filesystem::path(path.wstring() + L".tmp");
-      const auto data = value.dump(2);
       const auto file = CreateFileW(tmp.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
       if (file == INVALID_HANDLE_VALUE) {
         throw std::runtime_error("Cannot create VDD journal");
@@ -68,6 +67,23 @@ namespace managed_vdd {
       if (!ok || !MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
         throw std::runtime_error("Cannot durably commit VDD journal");
       }
+    }
+
+    /** @brief Atomically replace a durable JSON journal. */
+    void write_json(const std::filesystem::path &path, const json &value) {
+      write_bytes(path, value.dump(2));
+    }
+
+    /** @brief Read a bounded VDD settings file without changing its encoding or layout. */
+    std::string read_settings(const std::filesystem::path &path) {
+      if (std::filesystem::file_size(path) > 512 * 1024) {
+        throw std::runtime_error("VDD settings exceed size limit");
+      }
+      std::ifstream input(path, std::ios::binary);
+      if (!input) {
+        throw std::runtime_error("Cannot read VDD settings");
+      }
+      return {std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     }
 
     /** @brief Own a SetupAPI device information set. */
@@ -180,6 +196,7 @@ namespace managed_vdd {
   struct windows_backend_t::impl_t {
     HANDLE process_lock {nullptr};  ///< Prevents another process managing the same owned instance.
     std::filesystem::path journal;  ///< Baseline persisted independently from permanent ownership.
+    std::filesystem::path settings_file {L"C:\\VirtualDisplayDriver\\vdd_settings.xml"};  ///< VDD XML read at each device activation.
     std::string id;  ///< Exact owned device instance.
     std::string token;  ///< Must match the marker on the devnode.
     std::shared_ptr<display_device::WinApiLayer> api {std::make_shared<display_device::WinApiLayer>()};  ///< CCD API wrapper.
@@ -289,6 +306,34 @@ namespace managed_vdd {
       }
       return out;
     }
+
+    /** @brief Confirm that Windows advertises the owned target's requested mode. */
+    bool mode_available(mode_t requested) const {
+      const auto paths = api->queryDisplayConfig(display_device::QueryType::Active);
+      if (!paths) {
+        return false;
+      }
+      for (const auto &path : paths->m_paths) {
+        if (!target_belongs_to(path, wide(id))) {
+          continue;
+        }
+        const auto display_name = wide(api->getDisplayName(path));
+        if (display_name.empty()) {
+          continue;
+        }
+        for (DWORD index = 0;; ++index) {
+          DEVMODEW mode {};
+          mode.dmSize = sizeof(mode);
+          if (!EnumDisplaySettingsExW(display_name.c_str(), index, &mode, 0)) {
+            break;
+          }
+          if (mode.dmPelsWidth == static_cast<DWORD>(requested.width) && mode.dmPelsHeight == static_cast<DWORD>(requested.height) && mode.dmDisplayFrequency == static_cast<DWORD>(requested.fps)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
   };
 
   windows_backend_t::windows_backend_t(const std::filesystem::path &owner_file):
@@ -313,6 +358,17 @@ namespace managed_vdd {
     }
     impl_->process_lock = lock;
     impl_->journal = owner_file.wstring() + L".baseline.json";
+    HKEY settings_key {};
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\MikeTheTech\\VirtualDisplayDriver", 0, KEY_QUERY_VALUE, &settings_key) == ERROR_SUCCESS) {
+      wchar_t folder[MAX_PATH] {};
+      DWORD type = 0;
+      DWORD bytes = sizeof(folder) - sizeof(wchar_t);
+      const auto status = RegQueryValueExW(settings_key, L"VDDPATH", nullptr, &type, reinterpret_cast<BYTE *>(folder), &bytes);
+      RegCloseKey(settings_key);
+      if (status == ERROR_SUCCESS && type == REG_SZ && folder[0]) {
+        impl_->settings_file = std::filesystem::path(folder) / L"vdd_settings.xml";
+      }
+    }
     device_t device;
     impl_->open_owned(device);
   }
@@ -328,6 +384,27 @@ namespace managed_vdd {
       return false;
     }
     write_json(impl_->journal, impl_->snapshot());
+    return true;
+  }
+
+  bool windows_backend_t::prepare_mode(mode_t mode) {
+    const auto original = read_settings(impl_->settings_file);
+    const auto modified = ensure_mode(original, mode);
+    if (!modified) {
+      return false;
+    }
+    if (*modified == original) {
+      return true;
+    }
+    auto saved = read_json(impl_->journal);
+    if (saved.at("instance_id") != impl_->id || saved.at("owner_token") != impl_->token) {
+      return false;
+    }
+    saved["vdd_xml_path"] = narrow(impl_->settings_file.wstring());
+    saved["vdd_xml_original"] = original;
+    saved["vdd_xml_managed"] = *modified;
+    write_json(impl_->journal, saved);
+    write_bytes(impl_->settings_file, *modified);
     return true;
   }
 
@@ -420,6 +497,18 @@ namespace managed_vdd {
   }
 
   bool windows_backend_t::clear_checkpoint() {
+    if (has_checkpoint()) {
+      const auto saved = read_json(impl_->journal);
+      if (saved.contains("vdd_xml_managed")) {
+        const auto xml_path = std::filesystem::path(wide(saved.at("vdd_xml_path").get<std::string>()));
+        if (std::filesystem::exists(xml_path)) {
+          const auto current = read_settings(xml_path);
+          if (current == saved.at("vdd_xml_managed").get<std::string>()) {
+            write_bytes(xml_path, saved.at("vdd_xml_original").get<std::string>());
+          }
+        }
+      }
+    }
     std::lock_guard lock(impl_->name_mutex);
     impl_->display_id.clear();
     return !has_checkpoint() || std::filesystem::remove(impl_->journal);
@@ -444,7 +533,10 @@ namespace managed_vdd {
       topology.push_back({id});
     }
     const display_device::DeviceDisplayModeMap modes {{id, {{static_cast<unsigned>(width), static_cast<unsigned>(height)}, {static_cast<unsigned>(fps), 1}}}};
-    if (!impl_->displays.setTopology(topology) || !impl_->displays.setDisplayModes(modes) || !impl_->displays.setAsPrimary(id)) {
+    if (!impl_->displays.setTopology(topology) || !wait_for([&] {
+          return impl_->mode_available({width, height, fps});
+        }) ||
+        !impl_->displays.setDisplayModes(modes) || !impl_->displays.setAsPrimary(id)) {
       return false;
     }
     const auto states = impl_->displays.getCurrentHdrStates({id});
