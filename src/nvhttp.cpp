@@ -29,6 +29,7 @@
 #include "globals.h"
 #include "httpcommon.h"
 #include "logging.h"
+#include "managed_vdd_runtime.h"
 #include "network.h"
 #include "nvhttp.h"
 #include "platform/common.h"
@@ -1382,9 +1383,20 @@ namespace nvhttp {
     }
 
     host_audio = util::from_view(get_arg(args, "localAudioPlayMode"));
+    // Drain stopped captures before acquiring a new display lease, so a reconnect can apply its mode.
+    const bool no_active_sessions {rtsp_stream::session_count() == 0};
     auto launch_session = make_launch_session(host_audio, args);
 
-    if (rtsp_stream::session_count() == 0) {
+    try {
+      launch_session->vdd_lease = managed_vdd::runtime::prepare(*launch_session);
+    } catch (const std::exception &e) {
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", e.what());
+      tree.put("root.gamesession", 0);
+      return;
+    }
+
+    if (no_active_sessions) {
       // The display should be restored in case something fails as there are no other sessions.
       revert_display_configuration = true;
 
@@ -1440,7 +1452,15 @@ namespace nvhttp {
     );
     tree.put("root.gamesession", 1);
 
-    rtsp_stream::launch_session_raise(launch_session);
+    if (!rtsp_stream::launch_session_raise(launch_session)) {
+      if (launch_session->vdd_lease) {
+        launch_session->vdd_lease->expire();
+      }
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another RTSP handshake is pending");
+      tree.put("root.gamesession", 0);
+      return;
+    }
 
     // Stream was started successfully, we will revert the config when the app or session terminates
     revert_display_configuration = false;
@@ -1499,6 +1519,15 @@ namespace nvhttp {
     }
     const auto launch_session = make_launch_session(host_audio, args);
 
+    try {
+      launch_session->vdd_lease = managed_vdd::runtime::prepare(*launch_session);
+    } catch (const std::exception &e) {
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", e.what());
+      tree.put("root.resume", 0);
+      return;
+    }
+
     if (no_active_sessions) {
       // We want to prepare display only if there are no active sessions at
       // the moment. This should be done before probing encoders as it could
@@ -1541,7 +1570,14 @@ namespace nvhttp {
     );
     tree.put("root.resume", 1);
 
-    rtsp_stream::launch_session_raise(launch_session);
+    if (!rtsp_stream::launch_session_raise(launch_session)) {
+      if (launch_session->vdd_lease) {
+        launch_session->vdd_lease->expire();
+      }
+      tree.put("root.<xmlattr>.status_code", 503);
+      tree.put("root.<xmlattr>.status_message", "Another RTSP handshake is pending");
+      tree.put("root.resume", 0);
+    }
   }
 
   /**

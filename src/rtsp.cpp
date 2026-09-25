@@ -591,11 +591,12 @@ namespace rtsp_stream {
      * @note If the client does not begin streaming within the ping_timeout,
      *       the session will be discarded.
      * @param launch_session Streaming session information.
+     * @return Whether the pending launch was accepted.
      */
-    void session_raise(std::shared_ptr<launch_session_t> launch_session) {
+    bool session_raise(std::shared_ptr<launch_session_t> launch_session) {
       // If a launch event is still pending, don't overwrite it.
       if (launch_event.view(0s)) {
-        return;
+        return false;
       }
 
       // Raise the new launch session to prepare for the RTSP handshake
@@ -607,10 +608,14 @@ namespace rtsp_stream {
         if (!ec) {
           auto discarded = launch_event.pop(0s);
           if (discarded) {
+            if (discarded->vdd_lease) {
+              discarded->vdd_lease->expire();
+            }
             BOOST_LOG(debug) << "Event timeout: "sv << discarded->unique_id;
           }
         }
       });
+      return true;
     }
 
     /**
@@ -626,6 +631,9 @@ namespace rtsp_stream {
           BOOST_LOG(error) << "Attempted to clear unexpected session: "sv << launch_session_id << " vs "sv << launch_session->id;
         } else {
           raised_timer.cancel();
+          if (launch_session->vdd_lease) {
+            launch_session->vdd_lease->expire();
+          }
           launch_event.pop();
         }
       }
@@ -723,6 +731,9 @@ namespace rtsp_stream {
       acceptor.close();
       io_context.stop();
       clear();
+      if (auto pending = launch_event.pop(0s); pending && pending->vdd_lease) {
+        pending->vdd_lease->expire();
+      }
     }
 
   private:
@@ -742,8 +753,8 @@ namespace rtsp_stream {
   /**
    * @brief Queue a launch session until the RTSP client connects.
    */
-  void launch_session_raise(std::shared_ptr<launch_session_t> launch_session) {
-    server.session_raise(std::move(launch_session));
+  bool launch_session_raise(std::shared_ptr<launch_session_t> launch_session) {
+    return server.session_raise(std::move(launch_session));
   }
 
   void launch_session_clear(uint32_t launch_session_id) {
@@ -759,6 +770,9 @@ namespace rtsp_stream {
 
   void terminate_sessions() {
     server.clear(true);
+    if (auto pending = server.launch_event.view(0s)) {
+      server.session_clear(pending->id);
+    }
     input::terminate_gamepads();
   }
 

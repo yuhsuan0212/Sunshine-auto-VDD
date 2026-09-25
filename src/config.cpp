@@ -795,7 +795,8 @@ namespace config {
     },  // display_device
 
     0,  // max_bitrate
-    0  // minimum_fps_target (0 = framerate)
+    0,  // minimum_fps_target (0 = framerate)
+    {}  // managed_vdd_owner_file
   };
 
   /**
@@ -1713,6 +1714,7 @@ namespace config {
       }
     }
     bool_f(vars, "dd_config_revert_on_disconnect", video.dd.config_revert_on_disconnect);
+    string_f(vars, "managed_vdd_owner_file", video.managed_vdd_owner_file);
     generic_f(vars, "dd_mode_remapping", video.dd.mode_remapping, dd::mode_remapping_from_view);
     {
       int value = 0;

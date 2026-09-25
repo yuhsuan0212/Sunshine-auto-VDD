@@ -9,6 +9,7 @@
 
 // local includes
 #include "crypto.h"
+#include "managed_vdd.h"
 #include "thread_safe.h"
 
 namespace rtsp_stream {
@@ -19,6 +20,7 @@ namespace rtsp_stream {
    */
   struct launch_session_t {
     uint32_t id;  ///< RTSP launch-session identifier assigned before stream startup.
+    std::shared_ptr<managed_vdd::lease_t> vdd_lease;  ///< Keeps the owned display alive through HTTP/RTSP handoff.
 
     crypto::aes_t gcm_key;  ///< AES-GCM key negotiated for encrypted RTSP messages.
     crypto::aes_t iv;  ///< Initial RTSP AES-GCM IV supplied by the client.
@@ -50,8 +52,9 @@ namespace rtsp_stream {
    * @brief Queue a launch session until the RTSP client connects.
    *
    * @param launch_session Session state prepared by the GameStream launch handler.
+   * @return False when another pending handshake already owns the launch slot.
    */
-  void launch_session_raise(std::shared_ptr<launch_session_t> launch_session);
+  bool launch_session_raise(std::shared_ptr<launch_session_t> launch_session);
 
   /**
    * @brief Clear state for the specified launch session.

@@ -63,6 +63,7 @@ set_target_properties(sunshine_rc_object PROPERTIES
 )
 
 set(PLATFORM_TARGET_FILES
+        "${CMAKE_SOURCE_DIR}/src/platform/windows/managed_vdd.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/publish.cpp"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/misc.h"
         "${CMAKE_SOURCE_DIR}/src/platform/windows/misc.cpp"
@@ -101,6 +102,9 @@ list(PREPEND PLATFORM_LIBRARIES
         minhook::minhook
         ntdll
         setupapi
+        cfgmgr32
+        ole32
+        uuid
         shlwapi
         synchronization.lib
         userenv

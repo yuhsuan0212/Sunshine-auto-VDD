@@ -551,6 +551,7 @@ namespace stream {
     } control;  ///< Runtime state for the encrypted GameStream control channel.
 
     std::uint32_t launch_session_id;  ///< RTSP launch-session ID associated with this stream.
+    std::shared_ptr<managed_vdd::lease_t> vdd_lease;  ///< Released explicitly after capture workers have joined.
     std::string client_cert;  ///< PEM certificate for the paired client owning the stream.
     std::string input_session_id;  ///< Stable client identity used to retain input devices across resume.
 
@@ -2257,12 +2258,26 @@ namespace stream {
       }
 
       BOOST_LOG(debug) << "Session ended"sv;
+      // Device recovery has its own bounded waits and must not trip the capture-join watchdog.
+      task_pool.cancel(force_kill);
+      fg.disable();
+      if (session.vdd_lease) {
+        session.vdd_lease->finish();
+      }
     }
 
     /**
      * @brief Start the audio, video, and control workers for a streaming session.
      */
     int start(session_t &session, const std::string &addr_string) {
+      if (session.vdd_lease && !session.vdd_lease->start()) {
+        return -1;
+      }
+      auto vdd_failure = util::fail_guard([&] {
+        if (session.vdd_lease) {
+          session.vdd_lease->finish();
+        }
+      });
       session.input = input::alloc(session.mail, session.input_session_id);
 
       session.broadcast_ref = broadcast.ref();
@@ -2301,6 +2316,7 @@ namespace stream {
 #endif
       }
 
+      vdd_failure.disable();
       return 0;
     }
 
@@ -2314,6 +2330,7 @@ namespace stream {
 
       session->shutdown_event = mail->event<bool>(mail::shutdown);
       session->launch_session_id = launch_session.id;
+      session->vdd_lease = launch_session.vdd_lease;
       session->client_cert = launch_session.client_cert;
       session->input_session_id = launch_session.client_cert.empty() ? launch_session.unique_id : launch_session.client_cert;
 

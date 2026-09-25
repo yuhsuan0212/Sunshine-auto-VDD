@@ -22,6 +22,7 @@
 
 // local includes
 #include "audio.h"
+#include "managed_vdd_runtime.h"
 #include "platform/common.h"
 #include "rtsp.h"
 
@@ -701,6 +702,9 @@ namespace display_device {
      * @note This is function does not lock mutex.
      */
     void revert_configuration_unlocked(const revert_option_e option) {
+      if (managed_vdd::runtime::enabled()) {
+        return;
+      }
       if (!DD_DATA.sm_instance) {
         // Platform is not supported, nothing to do.
         return;
@@ -821,7 +825,9 @@ namespace display_device {
     return display_power->keepDisplayAwake(reason);
   }
 
-  std::string map_output_name(const std::string &output_name) {
+  std::string map_output_name(const std::string &requested_output_name) {
+    const auto managed_output = managed_vdd::runtime::output_name();
+    const auto &output_name = managed_output.empty() ? requested_output_name : managed_output;
     std::lock_guard lock {DD_DATA.mutex};
     if (!DD_DATA.sm_instance) {
       // Fallback to giving back the output name if the platform is not supported.
@@ -842,6 +848,9 @@ namespace display_device {
   }
 
   void configure_display(const config::video_t &video_config, const rtsp_stream::launch_session_t &session) {
+    if (managed_vdd::runtime::enabled()) {
+      return;
+    }
     const auto result {parse_configuration(video_config, session)};
     if (const auto *parsed_config {std::get_if<SingleDisplayConfiguration>(&result)}; parsed_config) {
       configure_display(*parsed_config);
@@ -891,6 +900,9 @@ namespace display_device {
   }
 
   void revert_configuration() {
+    if (managed_vdd::runtime::enabled()) {
+      return;
+    }
     std::lock_guard lock {DD_DATA.mutex};
     revert_configuration_unlocked(revert_option_e::try_indefinitely_with_delay);
   }

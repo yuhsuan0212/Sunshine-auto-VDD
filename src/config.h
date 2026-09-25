@@ -219,6 +219,7 @@ namespace config {
 
     int max_bitrate;  ///< Maximum bitrate ceiling in kbps for bitrate requested from the client.
     double minimum_fps_target;  ///< Lowest framerate that will be used when streaming. Range 0-1000, 0 = half of client's requested framerate.
+    std::string managed_vdd_owner_file;  ///< Opt-in prototype ownership file; empty disables automatic VDD management.
   };
 
   /**
