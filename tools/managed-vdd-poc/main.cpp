@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
       return 0;
     }
     if (argc < 3) {
-      std::cerr << "probe | provision SIGNED_INF OWNER_FILE | inspect OWNER_FILE | recover OWNER_FILE | cycle OWNER_FILE [COUNT] | cycle-mode OWNER_FILE [COUNT]\n";
+      std::cerr << "probe | provision SIGNED_INF OWNER_FILE | inspect OWNER_FILE | recover OWNER_FILE | cycle OWNER_FILE [COUNT] | cycle-mode OWNER_FILE [COUNT WIDTH HEIGHT FPS] | cycle-only OWNER_FILE [COUNT WIDTH HEIGHT FPS]\n";
       return 2;
     }
     auto backend = std::make_unique<managed_vdd::windows_backend_t>(argv[2]);
@@ -39,7 +39,8 @@ int main(int argc, char **argv) {
       std::cout << observer->inspect() << '\n';
       return 0;
     }
-    const bool configure_mode = std::string(argv[1]) == "cycle-mode";
+    const bool only_display = std::string(argv[1]) == "cycle-only";
+    const bool configure_mode = std::string(argv[1]) == "cycle-mode" || only_display;
     if (std::string(argv[1]) != "cycle" && !configure_mode) {
       throw std::runtime_error("Unknown operation");
     }
@@ -62,10 +63,10 @@ int main(int argc, char **argv) {
       std::cout << "cycle=" << i + 1 << " display=" << observer->device_id() << " activation_ms=" << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - begin).count() << std::endl;
       if (configure_mode) {
         try {
-          if (!observer->configure(width, height, fps, false)) {
+          if (!observer->configure(width, height, fps, false, only_display)) {
             throw std::runtime_error("Could not configure requested VDD SDR mode");
           }
-          std::cout << "configured=" << width << 'x' << height << '@' << fps << " primary=true\n"
+          std::cout << "configured=" << width << 'x' << height << '@' << fps << " only_display=" << (only_display ? "true" : "false") << "\n"
                     << std::flush;
         } catch (...) {
           lease->finish();

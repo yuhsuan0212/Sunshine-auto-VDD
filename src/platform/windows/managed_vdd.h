@@ -26,8 +26,8 @@ namespace managed_vdd {
     bool clear_checkpoint() override;
     /** @brief Return the currently enumerated owned display's stable libdisplaydevice ID. */
     std::string device_id() const;
-    /** @brief Activate the owned target, make it primary and apply the first client's mode. */
-    bool configure(int width, int height, int fps, bool hdr);
+    /** @brief Apply the first client's mode and optionally use only the VDD display. */
+    bool configure(int width, int height, int fps, bool hdr, bool only_display = true);
     /** @brief Return read-only PnP and display diagnostics as JSON. */
     std::string inspect() const;
     /** @brief Provision one new owned disabled device from an explicitly supplied signed INF. */

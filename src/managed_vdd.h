@@ -12,8 +12,21 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace managed_vdd {
+  /** @brief Active display groups, with each inner group representing cloned outputs. */
+  using topology_t = std::vector<std::vector<std::string>>;
+
+  /**
+   * @brief Choose the stream display topology without changing the saved baseline.
+   * @param current Active display groups before streaming.
+   * @param owned_id Display ID belonging to the managed VDD instance.
+   * @param only_display Whether other active outputs must be removed while streaming.
+   * @return A topology containing only VDD or the existing groups plus VDD.
+   */
+  topology_t stream_topology(topology_t current, const std::string &owned_id, bool only_display);
+
   /** @brief Result of an operation on the owned device. */
   enum class result_e {
     ok,  ///< Operation completed and can be verified.

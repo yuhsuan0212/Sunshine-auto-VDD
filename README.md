@@ -8,7 +8,7 @@ This is an experimental community fork of [LizardByte Sunshine](https://github.c
 
 ## What this fork adds
 
-When the first Moonlight client requests a stream, Sunshine saves the current display layout, adds the client's resolution and integer refresh rate to the VDD settings if needed, enables its own VDD device, waits for Windows to enumerate the mode, and makes that virtual display primary. Additional clients share it. After the last stream ends, Sunshine restores the original layout, disables the VDD device, and restores the VDD settings file if no other program changed it.
+When the first Moonlight client requests a stream, Sunshine saves the current display layout, adds the client's resolution and integer refresh rate to the VDD settings if needed, enables its own VDD device, waits for Windows to enumerate the mode, and makes the virtual display the only active Windows display. This brings application windows into the streamed desktop instead of leaving them on a physical monitor that Moonlight cannot see. Additional clients share it. After the last stream ends, Sunshine restores the original layout, disables the VDD device, and restores the VDD settings file if no other program changed it.
 
 The first client's request can use a custom size or refresh rate. The prototype accepts requests from 320×200 to 8192×4320 pixels and 24–240 Hz; Windows and the encoder may still reject a particular combination. A rejected launch restores the display state. The VDD package remains installed while idle, so follow [VDD's guidance](https://github.com/VirtualDrivers/Virtual-Display-Driver#%EF%B8%8F-important-gpuchipset-driver-updates) before major GPU or chipset driver updates.
 

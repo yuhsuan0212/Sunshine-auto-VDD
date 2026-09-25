@@ -7,6 +7,19 @@
 #include <stdexcept>
 
 namespace managed_vdd {
+  topology_t stream_topology(topology_t current, const std::string &owned_id, bool only_display) {
+    if (only_display) {
+      return {{owned_id}};
+    }
+    const bool already_active = std::any_of(current.begin(), current.end(), [&](const auto &group) {
+      return std::find(group.begin(), group.end(), owned_id) != group.end();
+    });
+    if (!already_active) {
+      current.push_back({owned_id});
+    }
+    return current;
+  }
+
   lease_t::lease_t(std::shared_ptr<manager_t> manager, std::uint32_t id, std::uint64_t generation):
       manager_(std::move(manager)),
       id_(id),

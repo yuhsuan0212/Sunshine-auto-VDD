@@ -519,19 +519,13 @@ namespace managed_vdd {
     return impl_->display_id;
   }
 
-  bool windows_backend_t::configure(int width, int height, int fps, bool hdr) {
+  bool windows_backend_t::configure(int width, int height, int fps, bool hdr, bool only_display) {
     const auto id = device_id();
     if (id.empty() || width <= 0 || height <= 0 || fps <= 0) {
       return false;
     }
-    auto topology = impl_->displays.getCurrentTopology();
-    bool active = false;
-    for (const auto &group : topology) {
-      active |= std::find(group.begin(), group.end(), id) != group.end();
-    }
-    if (!active) {
-      topology.push_back({id});
-    }
+    // Removing the physical output keeps existing application windows on the streamed desktop.
+    const auto topology = stream_topology(impl_->displays.getCurrentTopology(), id, only_display);
     const display_device::DeviceDisplayModeMap modes {{id, {{static_cast<unsigned>(width), static_cast<unsigned>(height)}, {static_cast<unsigned>(fps), 1}}}};
     if (!impl_->displays.setTopology(topology) || !wait_for([&] {
           return impl_->mode_available({width, height, fps});

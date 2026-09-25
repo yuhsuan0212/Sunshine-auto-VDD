@@ -289,4 +289,17 @@ namespace {
   TEST(ManagedVddConstruction, RejectsNullBackend) {
     EXPECT_THROW(manager_t(nullptr), std::invalid_argument);
   }
+
+  TEST(ManagedVddTopology, ExclusiveStreamRemovesPhysicalAndOtherVirtualOutputs) {
+    const topology_t before {{"physical"}, {"other-vdd"}};
+    EXPECT_EQ(stream_topology(before, "owned-vdd", true), (topology_t {{"owned-vdd"}}));
+    EXPECT_EQ(before, (topology_t {{"physical"}, {"other-vdd"}}));
+  }
+
+  TEST(ManagedVddTopology, ExtendedModeKeepsCurrentOutputsAndAvoidsDuplicates) {
+    const topology_t before {{"physical"}};
+    const topology_t extended {{"physical"}, {"owned-vdd"}};
+    EXPECT_EQ(stream_topology(before, "owned-vdd", false), extended);
+    EXPECT_EQ(stream_topology(extended, "owned-vdd", false), extended);
+  }
 }  // namespace

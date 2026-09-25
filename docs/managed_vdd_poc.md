@@ -6,7 +6,7 @@ This is an experimental Windows integration. The standalone backend can be built
 
 The first provider enables/disables one explicitly provisioned device instance. It does not remove device instances or driver packages at disconnect. The VDD source is unchanged, so the official signed package can be used.
 
-`managed_vdd_owner_file` is an experimental configuration key. Its default is empty (disabled). When set, the prototype uses the owned display, makes it primary, extends the existing topology, and requests the first client's resolution, refresh rate and HDR state. Before enabling VDD it adds the requested mode to `vdd_settings.xml` when needed, then checks that Windows advertises and accepts it. The original XML is retained in the recovery journal and restored when the last stream ends, unless another program edited the file meanwhile. Unsupported modes fail the launch and invoke recovery. Additional clients share that display. The normal Sunshine `dd_*` configuration/revert scheduler is bypassed for managed sessions to avoid conflicting changes; this prototype does not implement its mode remapping or ensure-only-display options.
+`managed_vdd_owner_file` is an experimental configuration key. Its default is empty (disabled). When set, the prototype uses the owned display as the only active display during a stream, and requests the first client's resolution, refresh rate and HDR state. Before enabling VDD it adds the requested mode to `vdd_settings.xml` when needed, then checks that Windows advertises and accepts it. The original XML is retained in the recovery journal and restored when the last stream ends, unless another program edited the file meanwhile. Unsupported modes fail the launch and invoke recovery. Additional clients share that display. The normal Sunshine `dd_*` configuration/revert scheduler is bypassed for managed sessions to avoid conflicting changes; this prototype does not implement its mode remapping options.
 
 The active topology, primary display, modes, HDR and positions are saved **before activation**. A headless baseline is allowed only when display enumeration succeeds with zero active targets. Disabling the owned device returns to headless; zero paths are not passed to SetDisplayConfig. Newly connected physical displays in the headless case are not forcibly disabled. DPI scaling and color profiles are not changed or explicitly restored.
 
@@ -40,16 +40,19 @@ managed-vdd-poc provision SIGNED_MttVDD.inf OWNER.json
 managed-vdd-poc inspect OWNER.json
 managed-vdd-poc cycle OWNER.json 1
 managed-vdd-poc cycle-mode OWNER.json 3
+managed-vdd-poc cycle-only OWNER.json 1 1920 1080 60
 managed-vdd-poc recover OWNER.json
 ```
 
-`probe` is read-only. `provision`, `cycle`, `cycle-mode` and `recover` require elevation. `cycle-mode` additionally makes the VDD primary at the specified size and FPS (default 1920x1080/60 Hz SDR) before restoring the baseline. The state directory must exist and should be writable only by Administrators/SYSTEM when used by the service. The executable currently uses the UCRT64 runtime DLLs, so `C:\msys64\ucrt64\bin` must be on PATH.
+`probe` is read-only. `provision`, `cycle`, `cycle-mode`, `cycle-only` and `recover` require elevation. `cycle-mode` makes the VDD primary while extending the original topology; `cycle-only` uses only VDD while the test runs. Both use the specified size and FPS (default 1920x1080/60 Hz SDR) and restore the original topology. The state directory must exist and should be writable only by Administrators/SYSTEM when used by the service. The executable currently uses the UCRT64 runtime DLLs, so `C:\msys64\ucrt64\bin` must be on PATH.
 
 Provisioning refuses an existing ownership file. If provisioning is interrupted, inspect that exact instance and recover it; do not keep rerunning provisioning to generate more devices. The standalone cycle exercises enable/enumerate/restore/disable and reports display identity and activation latency; it does not stream video or exercise the Sunshine RTSP integration.
 
 ## Validation and remaining gates
 
 The portable lifecycle and Windows backend tests pass, including fault injection, concurrent timer/capture startup and simulated repeated reconnects. A full Sunshine build passed the relevant test selection. On one Windows host, the owned signed driver completed several real PnP cycles, accepted both a nonstandard resolution and a refresh rate absent from its original configuration, and returned the physical layout and XML to their prior state. A Moonlight client then streamed at a custom resolution and 60 FPS; after disconnect, VDD was disabled and the temporary mode and recovery checkpoint were removed.
+
+An additional exclusive-display PnP cycle switched from an idle physical-only baseline to VDD as the only active output. The custom mode worked, and after the cycle the physical topology and VDD XML matched their original baselines while the owned device was disabled. A Moonlight application-window test then confirmed that a window previously left on the physical monitor appeared in the stream. After disconnect, the physical display returned and the owned VDD device was disabled.
 
 These results cover the tested requests, not every possible display mode. Resume, cancel, timeout, headless operation and forced-crash recovery still need end-to-end testing. GPU driver updates and Windows upgrades have not been tested. Follow the upstream VDD project's driver-update instructions.
 
