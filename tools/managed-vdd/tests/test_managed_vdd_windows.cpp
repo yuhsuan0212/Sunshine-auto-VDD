@@ -9,6 +9,7 @@
   #include <fstream>
   #include <gtest/gtest.h>
   #include <vector>
+  #include <windows.h>
 
 namespace {
   /** @brief Temporary ownership input for rejection tests. */
@@ -56,6 +57,36 @@ namespace {
   using managed_vdd::target_e;
   using targets_t = std::vector<active_target_t>;
   using ids_t = display_device::StringSet;
+
+  TEST(ManagedVddProcessOwner, MissingIdentityIsUnknown) {
+    EXPECT_EQ(managed_vdd::query_process_owner(0, 1), managed_vdd::owner_state_e::unknown);
+    EXPECT_EQ(managed_vdd::query_process_owner(GetCurrentProcessId(), 0), managed_vdd::owner_state_e::unknown);
+  }
+
+  TEST(ManagedVddProcessOwner, LiveProcessAndReusedPidAreDistinguished) {
+    FILETIME creation {}, exit {}, kernel {}, user {};
+    ASSERT_TRUE(GetProcessTimes(GetCurrentProcess(), &creation, &exit, &kernel, &user));
+    const uint64_t stamp = (static_cast<uint64_t>(creation.dwHighDateTime) << 32) | creation.dwLowDateTime;
+    EXPECT_EQ(managed_vdd::query_process_owner(GetCurrentProcessId(), stamp), managed_vdd::owner_state_e::alive);
+    EXPECT_EQ(managed_vdd::query_process_owner(GetCurrentProcessId(), stamp + 1), managed_vdd::owner_state_e::abandoned);
+  }
+
+  TEST(ManagedVddProcessOwner, ExitedProcessIsAbandonedEvenWhileHandleExists) {
+    STARTUPINFOW startup {sizeof(startup)};
+    PROCESS_INFORMATION child {};
+    wchar_t system[MAX_PATH] {};
+    ASSERT_NE(GetSystemDirectoryW(system, MAX_PATH), 0);
+    const auto executable = std::filesystem::path(system) / L"cmd.exe";
+    wchar_t command[] = L"cmd.exe /d /c exit 0";
+    ASSERT_TRUE(CreateProcessW(executable.c_str(), command, nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &child));
+    FILETIME creation {}, exit {}, kernel {}, user {};
+    EXPECT_TRUE(GetProcessTimes(child.hProcess, &creation, &exit, &kernel, &user));
+    const uint64_t stamp = (static_cast<uint64_t>(creation.dwHighDateTime) << 32) | creation.dwLowDateTime;
+    EXPECT_EQ(WaitForSingleObject(child.hProcess, 10000), WAIT_OBJECT_0);
+    EXPECT_EQ(managed_vdd::query_process_owner(child.dwProcessId, stamp), managed_vdd::owner_state_e::abandoned);
+    CloseHandle(child.hThread);
+    CloseHandle(child.hProcess);
+  }
 
   /** @brief An identified monitor. */
   active_target_t monitor(const std::string &id) {

@@ -51,6 +51,61 @@ The tool only ever touches the one device instance it provisioned, verified by a
 | `inspect OWNER_FILE` | yes | Show whether the device is disabled, its active targets and whether a checkpoint exists. |
 | `activate OWNER_FILE [WIDTH HEIGHT FPS]` | yes | Do command. The mode defaults to `SUNSHINE_CLIENT_WIDTH`/`HEIGHT`/`FPS`. |
 | `deactivate OWNER_FILE` | yes | Undo command. Safe to repeat. |
+| `recover OWNER_FILE SERVICE ABSOLUTE_STATE_FILE` | yes | Recover an abandoned host transaction from the interactive console, coordinating with the Sunshine service. |
+
+## Recovery after a crash or reboot
+
+Deploy this version of `managed-vdd.exe` to Sunshine's `tools` directory. It records the launching
+`sunshine.exe` process ID **and creation time** before display mutation. The launching process must
+belong to that installation; manually activated or older checkpoints have no trusted host identity
+and are not automatically recovered. Finish an existing stream with the old helper before upgrading.
+
+From an elevated PowerShell session, run the installer in this source directory:
+
+```powershell
+.\install-recovery.ps1 -OwnerFile C:\ProgramData\SunshineManagedVddPoc\owner.json
+```
+
+The installer checks that the owned VDD is disabled and no checkpoint remains. It installs a hidden
+recovery task for the current user, triggered at logon and every minute while logged on. Use
+`-ValidateOnly` to validate and print the proposed task without registering it. Custom installations
+can supply `-SunshineDirectory` and `-ServiceName`; the executable must be under Program Files and
+the service must point to that installation's `tools\sunshinesvc.exe`. The state path is the standard
+`config\display_device.state`; custom configuration directories require a correspondingly configured
+recovery invocation instead of this installer.
+
+Recovery holds the same cross-process lock as activation and deactivation. It:
+
+1. Leaves live owners, unknown identities, and non-console sessions untouched.
+2. Stops the configured service and waits for Sunshine processes to exit before writing display state.
+3. Restores the baseline, or tries one attached physical HDMI/DP/DVI/internal output at a time if the
+   old layout cannot be restored. Physical rescue intentionally does not promise the old layout.
+4. Disables the owned VDD and verifies that its active targets disappeared.
+5. Archives the baseline as `*.baseline.json.recovered.json` and retires Sunshine's stale display
+   persistence as `display_device.state.managed-vdd-recovered`, then clears the checkpoint.
+6. Restarts the service only if recovery stopped it. A durable `*.service.json` receipt survives helper
+   termination and lets a subsequent invocation retry a failed restart, even after the checkpoint cleared.
+
+A new Sunshine process cannot reuse an older process's checkpoint through Do/Undo: it must wait for
+coordinated recovery. This prevents the normal launch path from racing the recovery task or replaying
+Sunshine's obsolete baseline. Do not run a second Sunshine instance on the same desktop.
+
+**Limits:** this is console **logon** recovery, not a guarantee of a working physical login screen
+before sign-in. It detects process exit, not a hung-but-alive Sunshine process. Legacy/manual journals
+require explicit administrator recovery with Sunshine stopped. An inaccessible or missing owned
+device is not silently replaced. The task may wait up to one minute to retry. It has a two-minute
+execution limit; a killed recovery retains its journal/service receipt. Failed exact restoration can
+already have changed part of the desktop before physical rescue is attempted.
+
+To remove the scheduled recovery (without changing the driver), run:
+
+```powershell
+Unregister-ScheduledTask -TaskName 'Sunshine Managed VDD Recovery' -Confirm:$false
+```
+
+The recovery flow, including the login-screen limitation, must be tested on the target machine before
+claiming reboot recovery is validated. Tests cover lifecycle fault injection and real Windows process
+identity/exit checks without toggling the actual display or stopping services.
 
 ## Logs and recovery
 
@@ -60,9 +115,11 @@ Sunshine does not keep the output of prep commands, so `activate` and `deactivat
 Before enabling the VDD, `activate` records the current displays in `OWNER_FILE.baseline.json`. `deactivate`
 restores that baseline before disabling the VDD, so it is also the recovery command:
 
-- If Sunshine is killed while streaming, the next `activate` finds the checkpoint and cleans up first.
-- If the baseline cannot be restored, nothing is changed: the VDD and the checkpoint stay, the command fails and
+- With scheduled recovery installed, an exited host's checkpoint is recovered independently of the next stream.
+  Without it, a new host refuses that checkpoint until coordinated/manual recovery completes.
+- If the baseline cannot be restored by normal Undo, the VDD and the checkpoint stay, the command fails and
   Sunshine rejects further streams until the problem is fixed and `deactivate` succeeds.
+  Some display settings may already have been restored before another restoration step fails.
 - With no monitor connected (for example an unplugged DisplayPort cable), the baseline is headless: restoring it
   just disables the VDD. Windows can keep a path for an unplugged monitor; it is treated as headless only when its
   target name reports no monitor device path. A baseline is only recorded when every connected display could be

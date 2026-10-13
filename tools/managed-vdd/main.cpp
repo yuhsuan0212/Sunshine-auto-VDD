@@ -157,7 +157,7 @@ int main(int argc, char **argv) {
   // Sunshine discards the output of pre-display commands, so activate/deactivate keep their own log.
   std::optional<run_log_t> log;
   try {
-    if (argc >= 3 && (std::string(argv[1]) == "activate" || std::string(argv[1]) == "deactivate")) {
+    if (argc >= 3 && (std::string(argv[1]) == "activate" || std::string(argv[1]) == "deactivate" || std::string(argv[1]) == "recover")) {
       log.emplace(argv[2]);
       display_device::Logger::get().setLogLevel(display_device::Logger::LogLevel::info);
       display_device::Logger::get().setCustomCallback([&log](display_device::Logger::LogLevel, std::string value) {
@@ -184,11 +184,25 @@ int main(int argc, char **argv) {
     }
     auto backend = std::make_unique<managed_vdd::windows_backend_t>(argv[2]);
     auto *observer = backend.get();
+    if (std::string(argv[1]) == "recover") {
+      if (argc != 5) {
+        throw std::runtime_error("recover OWNER_FILE SERVICE_NAME ABSOLUTE_DISPLAY_STATE_FILE");
+      }
+      const auto result = observer->recover(std::filesystem::path(argv[3]).wstring(), argv[4]);
+      using enum managed_vdd::recovery_result_e;
+      const char *description = result == idle ? "idle" : result == busy   ? "deferred: owner is live, unknown, or not on console" :
+                                                        result == restored ? "original desktop restored" :
+                                                        result == rescued  ? "physical desktop rescued; baseline archived" :
+                                                                             "failed; recovery will be retried";
+      log->write(std::string {"recovery: "} + description);
+      return result == failed ? 1 : 0;
+    }
     if (std::string(argv[1]) == "inspect") {
       std::cout << observer->inspect() << '\n';
       return 0;
     }
     if (std::string(argv[1]) == "activate") {
+      observer->require_matching_host();
       // Mode defaults to the Sunshine pre-display command environment.
       const auto env_int = [](const char *name, int fallback) {
         const char *value = std::getenv(name);
@@ -209,6 +223,7 @@ int main(int argc, char **argv) {
       return 0;
     }
     if (std::string(argv[1]) == "deactivate") {
+      observer->require_matching_host();
       logged_backend_t logged(*backend, *log);
       if (!managed_vdd::deactivate_after_stream(logged)) {
         throw std::runtime_error("Could not deactivate VDD; the device and its checkpoint were kept for recovery");

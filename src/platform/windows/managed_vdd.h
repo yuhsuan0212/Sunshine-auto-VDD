@@ -4,6 +4,7 @@
  */
 #pragma once
 #include "src/managed_vdd.h"
+#include "src/managed_vdd_recovery.h"
 
 #include <display_device/types.h>
 #include <filesystem>
@@ -13,6 +14,14 @@
 #include <vector>
 
 namespace managed_vdd {
+  /**
+   * @brief Check an exact process identity without confusing a reused PID with its old owner.
+   * @param pid Recorded process ID.
+   * @param created Recorded Windows process creation FILETIME as an unsigned integer.
+   * @return Alive, abandoned, or unknown when access or metadata is insufficient.
+   */
+  owner_state_e query_process_owner(uint32_t pid, uint64_t created);
+
   /** @brief What an active display path currently leads to. */
   enum class target_e {
     monitor,  ///< The target name query returned a monitor device path, and the display could be identified.
@@ -71,6 +80,15 @@ namespace managed_vdd {
     std::string device_id() const;
     /** @brief Return read-only PnP and display diagnostics as JSON. */
     std::string inspect() const;
+    /** @brief Reject a host trying to reuse a different process's unfinished transaction. */
+    void require_matching_host() const;
+    /**
+     * @brief Recover an orphan on the interactive console, with the Sunshine service stopped.
+     * @param service Name of the installed Sunshine service.
+     * @param state_file Sunshine's display_device.state file to archive after verified recovery.
+     * @return Recovery outcome. Unknown owners and non-console sessions are left untouched.
+     */
+    recovery_result_e recover(const std::wstring &service, const std::filesystem::path &state_file);
     /** @brief Provision one new owned disabled device from an explicitly supplied signed INF. */
     static std::string provision(const std::filesystem::path &inf, const std::filesystem::path &owner_file);
 

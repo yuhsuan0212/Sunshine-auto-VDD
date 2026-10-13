@@ -10,15 +10,18 @@
 #include <cfgmgr32.h>
 #include <setupapi.h>
 #include <regstr.h>
+#include <tlhelp32.h>
 // clang-format on
 
 #include <algorithm>
+#include <cstdlib>
 #include <devguid.h>
 #include <display_device/logging.h>
 #include <display_device/windows/json.h>
 #include <display_device/windows/win_api_layer.h>
 #include <display_device/windows/win_display_device.h>
 #include <fstream>
+#include <map>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <objbase.h>
@@ -29,6 +32,68 @@ namespace managed_vdd {
   namespace {
     using json = nlohmann::json;
     constexpr auto marker_name = L"SunshineManagedVddOwner";  ///< Device-local ownership proof.
+
+    /** @brief Executable expected beside the installed tools directory. */
+    std::filesystem::path host_executable() {
+      std::wstring path(32768, L'\0');
+      const auto size = GetModuleFileNameW(nullptr, path.data(), static_cast<DWORD>(path.size()));
+      if (!size || size >= path.size()) {
+        throw std::runtime_error("Cannot identify installed helper location");
+      }
+      path.resize(size);
+      return std::filesystem::path(path).parent_path().parent_path() / L"sunshine.exe";
+    }
+
+    /** @brief Process creation time, immune to PID reuse. */
+    std::optional<uint64_t> process_creation(HANDLE process) {
+      FILETIME created {}, exited {}, kernel {}, user {};
+      if (!GetProcessTimes(process, &created, &exited, &kernel, &user)) {
+        return std::nullopt;
+      }
+      return (static_cast<uint64_t>(created.dwHighDateTime) << 32) | created.dwLowDateTime;
+    }
+
+    /** @brief Verify an opened process belongs to this Sunshine installation. */
+    bool is_host_process(HANDLE process) {
+      std::wstring path(32768, L'\0');
+      DWORD size = static_cast<DWORD>(path.size());
+      if (!QueryFullProcessImageNameW(process, 0, path.data(), &size)) {
+        return false;
+      }
+      path.resize(size);
+      return _wcsicmp(path.c_str(), host_executable().c_str()) == 0;
+    }
+
+    /** @brief Record the launching Sunshine ancestor, never an arbitrary environment PID. */
+    json launching_host() {
+      const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+      if (snapshot == INVALID_HANDLE_VALUE) {
+        return nullptr;
+      }
+      std::map<DWORD, DWORD> parents;
+      PROCESSENTRY32W entry {sizeof(entry)};
+      if (Process32FirstW(snapshot, &entry)) {
+        do {
+          parents[entry.th32ProcessID] = entry.th32ParentProcessID;
+        } while (Process32NextW(snapshot, &entry));
+      }
+      CloseHandle(snapshot);
+      auto pid = GetCurrentProcessId();
+      for (int depth = 0; depth < 16 && parents.contains(pid); ++depth) {
+        pid = parents.at(pid);
+        auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+        if (!process) {
+          continue;
+        }
+        const auto created = process_creation(process);
+        const bool match = is_host_process(process) && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+        CloseHandle(process);
+        if (match && created) {
+          return {{"pid", pid}, {"created", *created}};
+        }
+      }
+      return nullptr;
+    }
 
     /** @brief Convert UTF-8 identifiers into Windows strings. */
     std::wstring wide(const std::string &value) {
@@ -239,6 +304,23 @@ namespace managed_vdd {
     }
   }  // namespace
 
+  owner_state_e query_process_owner(uint32_t pid, uint64_t created) {
+    if (!pid || !created) {
+      return owner_state_e::unknown;
+    }
+    auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, pid);
+    if (!process) {
+      return GetLastError() == ERROR_INVALID_PARAMETER ? owner_state_e::abandoned : owner_state_e::unknown;
+    }
+    const auto actual = process_creation(process);
+    const auto wait = WaitForSingleObject(process, 0);
+    CloseHandle(process);
+    if (wait == WAIT_OBJECT_0 || (actual && *actual != created)) {
+      return owner_state_e::abandoned;
+    }
+    return actual && wait == WAIT_TIMEOUT ? owner_state_e::alive : owner_state_e::unknown;
+  }
+
   bool is_headless(const std::vector<active_target_t> *active_targets, bool no_active_paths) {
     if (!active_targets) {
       return no_active_paths;
@@ -272,6 +354,7 @@ namespace managed_vdd {
     display_device::WinDisplayDevice displays {api};  ///< Stable monitor IDs and display operations.
     mutable std::mutex name_mutex;  ///< Protects selected display ID.
     std::string display_id;  ///< Capture target, refreshed after each activation.
+    json caller {launching_host()};  ///< Host identity captured once for this command.
 
     /** @brief Capture a baseline without changing devices, also used before provisioning. */
     json snapshot() const {
@@ -451,6 +534,10 @@ namespace managed_vdd {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
       }
     }
+    if (impl_->caller.is_null() && std::getenv("SUNSHINE_CLIENT_WIDTH")) {
+      throw std::runtime_error("Cannot identify the launching Sunshine process; refusing an unrecoverable activation");
+    }
+    baseline["host_process"] = impl_->caller;
     write_json(impl_->journal, baseline);
     return true;
   }
@@ -589,6 +676,292 @@ namespace managed_vdd {
 
   std::string windows_backend_t::inspect() const {
     return json {{"instance_id", impl_->id}, {"disabled", impl_->disabled()}, {"active_targets", impl_->targets(true)}, {"checkpoint", std::filesystem::exists(impl_->journal)}}.dump(2);
+  }
+
+  void windows_backend_t::require_matching_host() const {
+    const auto &current = impl_->caller;
+    if (current.is_null() && std::getenv("SUNSHINE_CLIENT_WIDTH")) {
+      throw std::runtime_error("Cannot verify the launching Sunshine process");
+    }
+    if (!std::filesystem::exists(impl_->journal)) {
+      return;
+    }
+    if (current.is_null()) {
+      return;  // Explicit administrator commands keep their existing semantics.
+    }
+    const auto saved = read_json(impl_->journal);
+    if (!saved.contains("host_process") || saved["host_process"] != current) {
+      throw std::runtime_error("An earlier host owns the VDD checkpoint; coordinated recovery must run before streaming");
+    }
+  }
+
+  recovery_result_e windows_backend_t::recover(const std::wstring &service, const std::filesystem::path &state_file) {
+    DWORD session = 0;
+    if (!ProcessIdToSessionId(GetCurrentProcessId(), &session) || session == 0 || session != WTSGetActiveConsoleSessionId()) {
+      DD_LOG(warning) << "Recovery deferred: an interactive console session is required";
+      return recovery_result_e::busy;
+    }
+    if (service.empty() || state_file.filename() != L"display_device.state" || !state_file.is_absolute()) {
+      throw std::runtime_error("Recovery requires an explicit service and absolute display_device.state path");
+    }
+
+    /** @brief Coordinates service lifetime while the enclosing backend owns the process lock. */
+    class host_t final: public recovery_host_t {
+    public:
+      /** @brief Bind a validated device journal to the explicitly configured service and state file. */
+      host_t(impl_t &impl, const std::wstring &name, const std::filesystem::path &state):
+          impl(impl),
+          name(name),
+          state(state),
+          receipt(impl.journal.wstring() + L".service.json") {}
+
+      /** @brief Close service handles without modifying the desktop. */
+      ~host_t() override {
+        if (service_handle) {
+          CloseServiceHandle(service_handle);
+        }
+        if (scm) {
+          CloseServiceHandle(scm);
+        }
+      }
+
+      owner_state_e owner_state() override {
+        const auto saved = read_json(impl.journal);
+        if (saved.at("version") != 1 || saved.at("owner_token") != impl.token || saved.at("instance_id") != impl.id || !saved.contains("host_process") || !saved["host_process"].is_object()) {
+          return owner_state_e::unknown;
+        }
+        const auto pid = saved["host_process"].at("pid").get<DWORD>();
+        const auto created = saved["host_process"].at("created").get<uint64_t>();
+        return query_process_owner(pid, created);
+      }
+
+      bool quiesce() override {
+        if (!open_service()) {
+          return false;
+        }
+        const auto status = service_status();
+        if (!status) {
+          return false;
+        }
+        // Durable receipt allows a later recovery to restart a service even if this helper dies.
+        if (*status != SERVICE_STOPPED && !std::filesystem::exists(receipt)) {
+          write_json(receipt, {{"service", narrow(name)}, {"owner_token", impl.token}});
+        }
+        if (*status != SERVICE_STOPPED && *status != SERVICE_STOP_PENDING) {
+          SERVICE_STATUS ignored {};
+          if (!ControlService(service_handle, SERVICE_CONTROL_STOP, &ignored)) {
+            return false;
+          }
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        do {
+          if (service_status() == SERVICE_STOPPED && hosts_exited()) {
+            return true;
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        } while (std::chrono::steady_clock::now() < deadline);
+        DD_LOG(error) << "Recovery could not quiesce all Sunshine display writers";
+        return false;
+      }
+
+      bool rescue_physical() override {
+        const auto paths = impl.api->queryDisplayConfig(display_device::QueryType::All);
+        if (!paths) {
+          return false;
+        }
+        for (const auto &path : paths->m_paths) {
+          // Whitelist physical connectors; never rescue onto another indirect/virtual output.
+          const auto tech = path.targetInfo.outputTechnology;
+          const bool physical = tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HD15 || tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI ||
+                                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI || tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_LVDS ||
+                                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EXTERNAL || tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_EMBEDDED ||
+                                tech == DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INTERNAL;
+          if (!physical || !path.targetInfo.targetAvailable) {
+            continue;
+          }
+          const auto target = target_state(*impl.api, path);
+          if (target.state != target_e::monitor || target_belongs_to(path, wide(impl.id))) {
+            continue;
+          }
+          const display_device::ActiveTopology topology {{target.device_id}};
+          if (impl.displays.setTopology(topology) && impl.displays.setAsPrimary(target.device_id) && wait_for([&] {
+                return impl.displays.isTopologyTheSame(impl.displays.getCurrentTopology(), topology) && impl.displays.isPrimary(target.device_id);
+              })) {
+            DD_LOG(warning) << "Recovery activated a physical display; the old layout will be archived";
+            rescued_id = target.device_id;
+            return true;
+          }
+        }
+        return false;
+      }
+
+      bool verify_desktop(bool rescued) override {
+        if (rescued) {
+          return !rescued_id.empty() && wait_for([&] {
+            return impl.displays.isTopologyTheSame(impl.displays.getCurrentTopology(), {{rescued_id}}) && impl.displays.isPrimary(rescued_id);
+          });
+        }
+        const auto saved = read_json(impl.journal);
+        display_device::ActiveTopology topology;
+        display_device::DeviceDisplayModeMap modes;
+        display_device::HdrStateMap hdr;
+        if (!display_device::fromJson(saved.at("topology").get<std::string>(), topology) || !display_device::fromJson(saved.at("modes").get<std::string>(), modes) || !display_device::fromJson(saved.at("hdr").get<std::string>(), hdr)) {
+          return false;
+        }
+        if (topology.empty()) {
+          return modes.empty() && hdr.empty();  // Original state was headless.
+        }
+        display_device::StringSet ids;
+        for (const auto &[id, mode] : modes) {
+          ids.insert(id);
+        }
+        return wait_for([&] {
+          if (!impl.displays.isTopologyTheSame(impl.displays.getCurrentTopology(), topology) || !impl.displays.isPrimary(saved.at("primary").get<std::string>()) || impl.displays.getCurrentDisplayModes(ids) != modes || impl.displays.getCurrentHdrStates(ids) != hdr) {
+            return false;
+          }
+          std::size_t matched = 0;
+          for (const auto &entry : impl.displays.enumAvailableDevices()) {
+            if (entry.m_info && ids.contains(entry.m_device_id)) {
+              const auto &position = saved.at("positions").at(entry.m_device_id);
+              if (entry.m_info->m_origin_point.m_x != position.at(0) || entry.m_info->m_origin_point.m_y != position.at(1)) {
+                return false;
+              }
+              ++matched;
+            }
+          }
+          return matched == ids.size();
+        });
+      }
+
+      bool retire_state(bool rescued) override {
+        auto evidence = read_json(impl.journal);
+        evidence["recovery_result"] = rescued ? "physical_rescue" : "exact_restore";
+        write_json(impl.journal.wstring() + L".recovered.json", evidence);
+        if (std::filesystem::exists(state)) {
+          const auto archive = state.wstring() + L".managed-vdd-recovered";
+          if (!MoveFileExW(state.c_str(), archive.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+            return false;
+          }
+        }
+        return true;
+      }
+
+      bool resume() override {
+        if (!std::filesystem::exists(receipt)) {
+          return true;
+        }
+        const auto saved = read_json(receipt);
+        if (saved.at("service") != narrow(name) || saved.at("owner_token") != impl.token || !open_service()) {
+          return false;
+        }
+        if (service_status() != SERVICE_RUNNING && !StartServiceW(service_handle, 0, nullptr) && GetLastError() != ERROR_SERVICE_ALREADY_RUNNING) {
+          return false;
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        do {
+          if (service_status() == SERVICE_RUNNING) {
+            return std::filesystem::remove(receipt);
+          }
+          std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        } while (std::chrono::steady_clock::now() < deadline);
+        return false;
+      }
+
+    private:
+      /** @brief Open and validate the service wrapper from this installation. */
+      bool open_service() {
+        if (service_handle) {
+          return true;
+        }
+        if (scm) {
+          CloseServiceHandle(scm);
+        }
+        scm = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CONNECT);
+        if (!scm) {
+          return false;
+        }
+        service_handle = OpenServiceW(scm, name.c_str(), SERVICE_QUERY_CONFIG | SERVICE_QUERY_STATUS | SERVICE_STOP | SERVICE_START);
+        if (!service_handle) {
+          return false;
+        }
+        DWORD required = 0;
+        QueryServiceConfigW(service_handle, nullptr, 0, &required);
+        std::vector<BYTE> buffer(required);
+        auto config = reinterpret_cast<QUERY_SERVICE_CONFIGW *>(buffer.data());
+        if (!required || !QueryServiceConfigW(service_handle, config, required, &required)) {
+          return reject_service();
+        }
+        std::wstring command = config->lpBinaryPathName;
+        const auto expected = (host_executable().parent_path() / L"tools" / L"sunshinesvc.exe").wstring();
+        const bool match = _wcsicmp(command.c_str(), expected.c_str()) == 0 || _wcsicmp(command.c_str(), (L"\"" + expected + L"\"").c_str()) == 0;
+        return match || reject_service();
+      }
+
+      /** @brief Reject unexpected service executables without stopping them. */
+      bool reject_service() {
+        CloseServiceHandle(service_handle);
+        service_handle = nullptr;
+        DD_LOG(error) << "Recovery refused an unrecognized Sunshine service executable";
+        return false;
+      }
+
+      /** @brief Query service state, preserving failure as unknown. */
+      std::optional<DWORD> service_status() {
+        SERVICE_STATUS_PROCESS status {};
+        DWORD bytes = 0;
+        if (!QueryServiceStatusEx(service_handle, SC_STATUS_PROCESS_INFO, reinterpret_cast<BYTE *>(&status), sizeof(status), &bytes)) {
+          return std::nullopt;
+        }
+        return status.dwCurrentState;
+      }
+
+      /** @brief Refuse display writes if a matching host remains outside the stopped service. */
+      bool hosts_exited() {
+        const auto snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (snapshot == INVALID_HANDLE_VALUE) {
+          return false;
+        }
+        bool clear = true;
+        PROCESSENTRY32W entry {sizeof(entry)};
+        if (!Process32FirstW(snapshot, &entry)) {
+          clear = false;
+        } else {
+          do {
+            if (_wcsicmp(entry.szExeFile, L"sunshine.exe") != 0) {
+              continue;
+            }
+            auto process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE, entry.th32ProcessID);
+            if (!process) {
+              clear = false;
+              break;
+            }
+            const bool running = WaitForSingleObject(process, 0) != WAIT_OBJECT_0;
+            // Conservatively wait for any live Sunshine instance. An unrelated host
+            // can also mutate this desktop, so executable-path isolation is insufficient.
+            CloseHandle(process);
+            if (running) {
+              clear = false;
+              break;
+            }
+          } while (Process32NextW(snapshot, &entry));
+        }
+        CloseHandle(snapshot);
+        return clear;
+      }
+
+      impl_t &impl;  ///< Locked device backend.
+      std::wstring name;  ///< Explicitly selected service.
+      std::filesystem::path state;  ///< Host persistence to retire only after recovery.
+      std::filesystem::path receipt;  ///< Durable obligation to restart the service.
+      std::string rescued_id;  ///< Physical target selected by the fallback, verified after VDD removal.
+      SC_HANDLE scm {nullptr};  ///< Service manager handle.
+      SC_HANDLE service_handle {nullptr};  ///< Validated Sunshine service handle.
+    } host {*impl_, service, state_file};
+
+    if (!has_checkpoint()) {
+      return host.resume() ? recovery_result_e::idle : recovery_result_e::failed;
+    }
+    return recover_abandoned(*this, host);
   }
 
   std::string windows_backend_t::provision(const std::filesystem::path &inf, const std::filesystem::path &owner_file) {
