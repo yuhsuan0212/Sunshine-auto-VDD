@@ -169,43 +169,43 @@ namespace avahi {
   /**
    * @brief Avahi client state-change callback signature.
    */
-  typedef void (*ClientCallback)(Client *, ClientState, void *userdata);
+  using ClientCallback = void (*)(Client *, ClientState, void *userdata);
   /**
    * @brief Avahi entry-group state-change callback signature.
    */
-  typedef void (*EntryGroupCallback)(EntryGroup *g, EntryGroupState state, void *userdata);
+  using EntryGroupCallback = void (*)(EntryGroup *g, EntryGroupState state, void *userdata);
 
   /**
    * @brief Function pointer used to free Avahi-allocated memory.
    */
-  typedef void (*free_fn)(void *);
+  using free_fn = void (*)(void *);
 
   /**
    * @brief Function pointer used to create an Avahi client.
    */
-  typedef Client *(*client_new_fn)(const Poll *poll_api, ClientFlags flags, ClientCallback callback, void *userdata, int *error);
+  using client_new_fn = Client *(*)(const Poll *poll_api, ClientFlags flags, ClientCallback callback, void *userdata, int *error);
   /**
    * @brief Function pointer used to destroy an Avahi client.
    */
-  typedef void (*client_free_fn)(Client *);
+  using client_free_fn = void (*)(Client *);
   /**
    * @brief Function pointer used to request an alternative Avahi service name.
    */
-  typedef char *(*alternative_service_name_fn)(char *);
+  using alternative_service_name_fn = char *(*)(char *);
 
   /**
    * @brief Function pointer used to get an Avahi client from an entry group.
    */
-  typedef Client *(*entry_group_get_client_fn)(EntryGroup *);
+  using entry_group_get_client_fn = Client *(*)(EntryGroup *);
 
   /**
    * @brief Function pointer used to create an Avahi entry group.
    */
-  typedef EntryGroup *(*entry_group_new_fn)(Client *, EntryGroupCallback, void *userdata);
+  using entry_group_new_fn = EntryGroup *(*)(Client *, EntryGroupCallback, void *userdata);
   /**
    * @brief Function pointer used to add a service to an Avahi entry group.
    */
-  typedef int (*entry_group_add_service_fn)(
+  using entry_group_add_service_fn = int (*)(
     EntryGroup *group,
     IfIndex interface,
     Protocol protocol,
@@ -221,49 +221,49 @@ namespace avahi {
   /**
    * @brief Function pointer used to test whether an Avahi entry group is empty.
    */
-  typedef int (*entry_group_is_empty_fn)(EntryGroup *);
+  using entry_group_is_empty_fn = int (*)(EntryGroup *);
   /**
    * @brief Function pointer used to reset an Avahi entry group.
    */
-  typedef int (*entry_group_reset_fn)(EntryGroup *);
+  using entry_group_reset_fn = int (*)(EntryGroup *);
   /**
    * @brief Function pointer used to publish an Avahi entry group.
    */
-  typedef int (*entry_group_commit_fn)(EntryGroup *);
+  using entry_group_commit_fn = int (*)(EntryGroup *);
 
   /**
    * @brief Function pointer used to duplicate Avahi strings.
    */
-  typedef char *(*strdup_fn)(const char *);
+  using strdup_fn = char *(*)(const char *);
   /**
    * @brief Function pointer used to format Avahi error codes.
    */
-  typedef char *(*strerror_fn)(int);
+  using strerror_fn = char *(*)(int);
   /**
    * @brief Function pointer used to read the last Avahi client error.
    */
-  typedef int (*client_errno_fn)(Client *);
+  using client_errno_fn = int (*)(Client *);
 
   /**
    * @brief Function pointer used to get the Avahi simple-poll API.
    */
-  typedef Poll *(*simple_poll_get_fn)(SimplePoll *);
+  using simple_poll_get_fn = Poll *(*)(SimplePoll *);
   /**
    * @brief Function pointer used to run the Avahi simple-poll loop.
    */
-  typedef int (*simple_poll_loop_fn)(SimplePoll *);
+  using simple_poll_loop_fn = int (*)(SimplePoll *);
   /**
    * @brief Function pointer used to stop the Avahi simple-poll loop.
    */
-  typedef void (*simple_poll_quit_fn)(SimplePoll *);
+  using simple_poll_quit_fn = void (*)(SimplePoll *);
   /**
    * @brief Function pointer used to allocate an Avahi simple-poll instance.
    */
-  typedef SimplePoll *(*simple_poll_new_fn)();
+  using simple_poll_new_fn = SimplePoll *(*)();
   /**
    * @brief Function pointer used to free an Avahi simple-poll instance.
    */
-  typedef void (*simple_poll_free_fn)(SimplePoll *);
+  using simple_poll_free_fn = void (*)(SimplePoll *);
 
   free_fn free;  ///< Free.
   client_new_fn client_new;  ///< Client new.
@@ -290,7 +290,7 @@ namespace avahi {
    * @return 0 when common Avahi functions are available; nonzero otherwise.
    */
   int init_common() {
-    static void *handle {nullptr};
+    static dyn::library_t *handle {nullptr};
     static bool funcs_loaded = false;
 
     if (funcs_loaded) {
@@ -304,19 +304,18 @@ namespace avahi {
       }
     }
 
-    std::vector<std::tuple<dyn::apiproc *, const char *>> funcs {
-      {(dyn::apiproc *) &alternative_service_name, "avahi_alternative_service_name"},
-      {(dyn::apiproc *) &free, "avahi_free"},
-      {(dyn::apiproc *) &strdup, "avahi_strdup"},
-      {(dyn::apiproc *) &strerror, "avahi_strerror"},
-      {(dyn::apiproc *) &simple_poll_get, "avahi_simple_poll_get"},
-      {(dyn::apiproc *) &simple_poll_loop, "avahi_simple_poll_loop"},
-      {(dyn::apiproc *) &simple_poll_quit, "avahi_simple_poll_quit"},
-      {(dyn::apiproc *) &simple_poll_new, "avahi_simple_poll_new"},
-      {(dyn::apiproc *) &simple_poll_free, "avahi_simple_poll_free"},
-    };
-
-    if (dyn::load(handle, funcs)) {
+    if (std::vector<std::tuple<dyn::apiproc *, const char *>> funcs {
+          {(dyn::apiproc *) &alternative_service_name, "avahi_alternative_service_name"},
+          {(dyn::apiproc *) &free, "avahi_free"},
+          {(dyn::apiproc *) &strdup, "avahi_strdup"},
+          {(dyn::apiproc *) &strerror, "avahi_strerror"},
+          {(dyn::apiproc *) &simple_poll_get, "avahi_simple_poll_get"},
+          {(dyn::apiproc *) &simple_poll_loop, "avahi_simple_poll_loop"},
+          {(dyn::apiproc *) &simple_poll_quit, "avahi_simple_poll_quit"},
+          {(dyn::apiproc *) &simple_poll_new, "avahi_simple_poll_new"},
+          {(dyn::apiproc *) &simple_poll_free, "avahi_simple_poll_free"},
+        };
+        dyn::load(handle, funcs)) {
       return -1;
     }
 
@@ -334,7 +333,7 @@ namespace avahi {
       return -1;
     }
 
-    static void *handle {nullptr};
+    static dyn::library_t *handle {nullptr};
     static bool funcs_loaded = false;
 
     if (funcs_loaded) {
@@ -348,19 +347,18 @@ namespace avahi {
       }
     }
 
-    std::vector<std::tuple<dyn::apiproc *, const char *>> funcs {
-      {(dyn::apiproc *) &client_new, "avahi_client_new"},
-      {(dyn::apiproc *) &client_free, "avahi_client_free"},
-      {(dyn::apiproc *) &entry_group_get_client, "avahi_entry_group_get_client"},
-      {(dyn::apiproc *) &entry_group_new, "avahi_entry_group_new"},
-      {(dyn::apiproc *) &entry_group_add_service, "avahi_entry_group_add_service"},
-      {(dyn::apiproc *) &entry_group_is_empty, "avahi_entry_group_is_empty"},
-      {(dyn::apiproc *) &entry_group_reset, "avahi_entry_group_reset"},
-      {(dyn::apiproc *) &entry_group_commit, "avahi_entry_group_commit"},
-      {(dyn::apiproc *) &client_errno, "avahi_client_errno"},
-    };
-
-    if (dyn::load(handle, funcs)) {
+    if (std::vector<std::tuple<dyn::apiproc *, const char *>> funcs {
+          {(dyn::apiproc *) &client_new, "avahi_client_new"},
+          {(dyn::apiproc *) &client_free, "avahi_client_free"},
+          {(dyn::apiproc *) &entry_group_get_client, "avahi_entry_group_get_client"},
+          {(dyn::apiproc *) &entry_group_new, "avahi_entry_group_new"},
+          {(dyn::apiproc *) &entry_group_add_service, "avahi_entry_group_add_service"},
+          {(dyn::apiproc *) &entry_group_is_empty, "avahi_entry_group_is_empty"},
+          {(dyn::apiproc *) &entry_group_reset, "avahi_entry_group_reset"},
+          {(dyn::apiproc *) &entry_group_commit, "avahi_entry_group_commit"},
+          {(dyn::apiproc *) &client_errno, "avahi_client_errno"},
+        };
+        dyn::load(handle, funcs)) {
       return -1;
     }
 
@@ -415,7 +413,7 @@ namespace platf::publish {
    * @param g Entry group that emitted the state change.
    * @param state Avahi entry-group state reported by the callback.
    */
-  void entry_group_callback(avahi::EntryGroup *g, avahi::EntryGroupState state, void *) {
+  void entry_group_callback(avahi::EntryGroup *g, avahi::EntryGroupState state, void *) {  // NOSONAR(cpp:S5008): Avahi callbacks require a void pointer for user data.
     group = g;
 
     switch (state) {
@@ -505,7 +503,7 @@ namespace platf::publish {
    * @param c Avahi client that emitted the state change.
    * @param state Avahi client state reported by the callback.
    */
-  void client_callback(avahi::Client *c, avahi::ClientState state, void *) {
+  void client_callback(avahi::Client *c, avahi::ClientState state, void *) {  // NOSONAR(cpp:S5008): Avahi callbacks require a void pointer for user data.
     switch (state) {
       case avahi::CLIENT_S_RUNNING:
         create_services(c);
@@ -532,11 +530,11 @@ namespace platf::publish {
     std::jthread poll_thread;  ///< Poll thread.
 
     /**
-     * @brief Store the Avahi polling thread for shutdown on destruction.
+     * @brief Explicitly store the Avahi polling thread for shutdown on destruction.
      *
      * @param poll_thread Poll thread.
      */
-    deinit_t(std::jthread poll_thread):
+    explicit deinit_t(std::jthread poll_thread):
         poll_thread {std::move(poll_thread)} {
     }
 

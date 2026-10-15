@@ -143,7 +143,7 @@ namespace display_prep {
     // Allocate before Do: an allocation failure must not strand a prepared output.
     auto lease = std::shared_ptr<lease_t>(new lease_t(shared_from_this()));  // NOSONAR(cpp:S5950): the constructor is private
     std::unique_lock lock(mutex_);
-    if (!restored_.wait_for(lock, RESTORE_WAIT, [this] {
+    if (!restored_.wait_for(lock, RESTORE_WAIT, [this] {  // NOSONAR(cpp:S6004): lock also protects preparation and lease accounting after this if
           return state_ != state_e::restoring;
         })) {
       error_ = "Previous display restoration is still pending";
