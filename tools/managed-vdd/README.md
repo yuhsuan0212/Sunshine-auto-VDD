@@ -117,6 +117,8 @@ restores that baseline before disabling the VDD, so it is also the recovery comm
 
 - With scheduled recovery installed, an exited host's checkpoint is recovered independently of the next stream.
   Without it, a new host refuses that checkpoint until coordinated/manual recovery completes.
+- If Sunshine still has saved settings for a disconnected display, it keeps retrying restoration and defers Undo.
+  The VDD and its checkpoint remain available while that restoration is pending.
 - If the baseline cannot be restored by normal Undo, the VDD and the checkpoint stay, the command fails and
   Sunshine rejects further streams until the problem is fixed and `deactivate` succeeds.
   Some display settings may already have been restored before another restoration step fails.
